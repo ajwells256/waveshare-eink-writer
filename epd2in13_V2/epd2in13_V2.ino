@@ -55,8 +55,11 @@ void loop()
       } else if(strcmp(build, "wake") == 0) {
         epd.Reset();
       } else {
-        Screen s = Screen(1);
-        s.AddSmallText(build);
+        Screen s = Screen(2);
+        s.DefineSection(0, 2, &Font12);
+        s.DefineSection(1, 2, &Font8);
+        s.AddText(0, build);
+        s.AddText(1, build);
         epd.DisplayScreen(&s);
       }
       Serial.println("Message Received");
