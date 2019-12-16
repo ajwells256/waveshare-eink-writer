@@ -118,42 +118,37 @@ unsigned char *Screen::GetLineFromSection(int section, int x) {
     // screen is exactly 15.25 bytes wide but screen expects to receive 16 bytes
     unsigned char *line = (unsigned char *)calloc(16, 1);
     sFONT *font = secFonts[section];
+    uint8_t subln = x % font->Height;
     int ln = x / font->Height;
-    int subln = x % font->Height;
 
-    const uint8_t **data = secPtrs[section];
-    line[0] = 0xFF;
-    char used = 0;
-    unsigned char rPtr = 0;
-    for (int i = 0; i < 15; i++)
-    {
-        if (ln >= secHeight[section])
+    if(ln >= secHeight[section]) {
+        for(int i = 0; i < 16; i++) 
+            line[i] = 0xFF;
+    } else {
+        uint8_t bytes = (font->Width / 8) + ((font->Width % 8) != 0);
+        const uint8_t **data = secPtrs[section];
+        line[0] = 0xFF; // avoid the cutoff
+        uint8_t wptr = 8;
+        unsigned char *cbyte = (unsigned char *)calloc(bytes,1);
+        for (uint8_t rptr = 0; rptr < secWidth[section]; rptr++)
         {
-            line[i + 1] = 0xFF;
-        } else {
-            const uint8_t *frame = data[ln * secWidth[section] + rPtr];
+            const uint8_t *frame = data[ln * secWidth[section] + rptr];
 #ifdef UNIT
-            unsigned char cbyte = (char)frame;
+            cbyte[0] = (unsigned char)frame;
 #else
-            unsigned char cbyte = frame == nullptr ? 0xFF : ~pgm_read_byte(&frame[subln]);
-#endif
-            if(used == 0) {
-                line[i + 1] = cbyte;
-            } else if(used + font->Width <= 8) {
-
-            } else {
-                unsigned char rem = 8 - used;
-                unsigned char mask = ~((1 << font->Width) - 1);
-                unsigned char lowmask = font->Width > rem ?
-                    mask >> font->Width - rem :
-                    mask << rem - font->Width;
-                line[i] |= (unsigned char)((cbyte >> used) | lowmask);
-                line[i + 1] = (unsigned char)(cbyte << rem);
+            for(uint8_t b = 0; b < bytes; b++) {
+                cbyte[b] = frame == nullptr ? 0xFF : ~pgm_read_byte(frame + bytes*subln + b);
             }
-            used = (used + font->Width) % 8;
-            i -= used == 0;
-            rPtr++; // increment the read pointer even if we redo the write
+#endif
+            writebuf(cbyte, line, wptr, font->Width);
+            wptr += font->Width;
         }
+        if(wptr < 128) {
+            for(ln = 0; ln < bytes; ln++)
+                cbyte[ln] = 0xFF;
+            writebuf(cbyte, line, wptr, 128-wptr);
+        }
+        free(cbyte);
     }
     return line;
 }
