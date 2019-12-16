@@ -1,5 +1,5 @@
-
 #include "screen.h"
+
 
 Screen::Screen(int sectors) {
     sects = sectors;
@@ -23,8 +23,7 @@ Screen::~Screen() {
     free(secFonts);
 }
 
-/* write the provided input into the destination (assume that the input is aligned left) 
- input should also have one full byte of extra space */
+/* write the provided input into the destination (assume that the input is aligned left)  */
 inline void writebuf(unsigned char *input, unsigned char *dst, uint8_t startBit, uint8_t lengthBits) {
     unsigned char byte = input[0];
     // write non-aligned
@@ -32,7 +31,8 @@ inline void writebuf(unsigned char *input, unsigned char *dst, uint8_t startBit,
     oft = startBit % 8;
     rem = 8-oft;
     mask = ((1 << rem) - 1); // 0^oft||1^(rem)
-    if(lengthBits+oft < 8) {
+    // if whole thing fits in first byte
+    if(lengthBits+oft < 8) { 
         rem = lengthBits;
         mask = mask << 8-lengthBits-oft;
     }
@@ -42,7 +42,8 @@ inline void writebuf(unsigned char *input, unsigned char *dst, uint8_t startBit,
     // write aligned
     uint8_t alignedBytes = (lengthBits - rem)/8;
     int i;
-    for(i = 0; i < alignedBytes; i++) {
+    for(i = 0; i < alignedBytes; i++) {\
+        // mask in case of arithmetic shift
         byte = (input[i] << rem) | ((input[i+1] >> oft) & mask);
         dst[index + i] = byte;
     }
@@ -75,6 +76,7 @@ int Screen::DefineSection(int section, int lines, sFONT *font) {
     return 1;
 }
 
+/* Write text to the specified section, overwriting any previous text*/
 void Screen::AddText(int section, char *txt) {
     const uint8_t **secData = secPtrs[section];
     int w = secWidth[section];
@@ -115,14 +117,14 @@ void Screen::AddText(int section, char *txt) {
 Get a line from the indicated section; x is the line starting at base 0
 */
 unsigned char *Screen::GetLineFromSection(int section, int x) {
-    // screen is exactly 15.25 bytes wide but screen expects to receive 16 bytes
-    unsigned char *line = (unsigned char *)calloc(16, 1);
+    // screen is exactly 15.25 bytes wide but screen expects to receive LINEBYTES bytes
+    unsigned char *line = (unsigned char *)calloc(LINEBYTES, 1);
     sFONT *font = secFonts[section];
     uint8_t subln = x % font->Height;
     int ln = x / font->Height;
 
     if(ln >= secHeight[section]) {
-        for(int i = 0; i < 16; i++) 
+        for(int i = 0; i < LINEBYTES; i++) 
             line[i] = 0xFF;
     } else {
         uint8_t bytes = (font->Width / 8) + ((font->Width % 8) != 0);
@@ -143,16 +145,17 @@ unsigned char *Screen::GetLineFromSection(int section, int x) {
             writebuf(cbyte, line, wptr, font->Width);
             wptr += font->Width;
         }
-        if(wptr < 128) {
+        if(wptr < LINEBITS) {
             for(ln = 0; ln < bytes; ln++)
                 cbyte[ln] = 0xFF;
-            writebuf(cbyte, line, wptr, 128-wptr);
+            writebuf(cbyte, line, wptr, LINEBITS-wptr);
         }
         free(cbyte);
     }
     return line;
 }
 
+/* get line x of the screen */
 unsigned char * Screen::GetLine(int x) {
     for(int s = 0; s < sects; s++) {
         if(x < secCap[s]) {
@@ -160,12 +163,13 @@ unsigned char * Screen::GetLine(int x) {
             return GetLineFromSection(s, oft);
         }
     }
-    unsigned char *blank = (unsigned char *)malloc(16);
-    for(int i = 0; i < 16; i++) {
+    unsigned char *blank = (unsigned char *)malloc(LINEBYTES);
+    for(int i = 0; i < LINEBYTES; i++) {
         blank[i] = 0xFF;
     }
     return blank;
 }
+
 #ifdef UNIT
 void Screen::Print() {
     const uint8_t **data;
@@ -185,8 +189,6 @@ void Screen::Print() {
 #endif
 
 #ifdef UNIT
-
-
 void printarray_test(Screen *s)
 {
     s->Print();
@@ -204,7 +206,7 @@ void getline_test(Screen *s)
 }
 
 void betterbitmap_test() {
-    unsigned char *line = (unsigned char *)calloc(16,1);
+    unsigned char *line = (unsigned char *)calloc(LINEBYTES,1);
     uint8_t *in = (uint8_t *)calloc(4,1);
     in[0] = 0x88;
     writebuf(in, line, 1, 5);
@@ -212,10 +214,10 @@ void betterbitmap_test() {
     in[1] = 0x42;
     in[2] = 0x21;
     in[3] = 0xFF;
-    writebuf(in, line, 16, 25);
+    writebuf(in, line, LINEBYTES, 25);
 
     printf("0x");
-    for(int i = 0; i < 16; i++) {
+    for(int i = 0; i < LINEBYTES; i++) {
         printf("%x", line[i]);
     }
     printf("\n");

@@ -5,7 +5,9 @@
 #define EPD_WIDTH 122
 #define EPD_HEIGHT 250
 
-#define null 0;
+#define LINEBYTES 16
+#define LINEBITS (LINEBYTES * 8)
+
 #include "fonts.h"
 
 // #define UNIT 0
@@ -15,6 +17,7 @@
 #include <avr/pgmspace.h>
 #endif
 #include <stdlib.h>
+
 
 class Screen {
     public:
