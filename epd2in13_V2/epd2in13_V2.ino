@@ -5,6 +5,7 @@
 #include <stdio.h>
 
 Epd epd;
+Screen *s;
 
 int buff[64];
 int rPtr = 0;
@@ -19,12 +20,14 @@ void setup()
         return;
     }
 
-    Serial.println("e-Paper clear");
-    epd.Clear();
-
     epd.Display(IMAGE_DATA);
-    Serial.println("e-Paper show pic");
-    Serial.println("e-Paper clear and sleep");
+
+    s = new Screen(5);
+    s->DefineSection(0, 2, &Font8);
+    s->DefineSection(1, 2, &Font12);
+    s->DefineSection(2, 2, &Font16);
+    s->DefineSection(3, 2, &Font20);
+    s->DefineSection(4, 2, &Font24);
 }
 
 void loop()
@@ -55,11 +58,12 @@ void loop()
       } else if(strcmp(build, "wake") == 0) {
         epd.Reset();
       } else {
-        Screen s = Screen(1);
-        s.AddSmallText(build);
-        epd.DisplayScreen(&s);
+        for(int i = 0; i < 5; i++) {
+          s->AddText(i, build);
+        }
+        epd.DisplayScreen(s);
       }
-      Serial.println("Message Received");
+      Serial.println("Message Received ");
       rPtr++; // get past the trailing semicolon
     }
     wPtr++;

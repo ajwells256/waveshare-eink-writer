@@ -1,11 +1,13 @@
-
 #include "screen.h"
+
 
 Screen::Screen(int sectors) {
     sects = sectors;
-    secBases = (int *)malloc(sects * sizeof(int));
+    secCap = (int *)malloc(sects * sizeof(int));
+    secWidth = (int *)malloc(sects * sizeof(int));
+    secHeight = (int *)malloc(sects * sizeof(int));
     secFonts = (sFONT **)malloc(sects * sizeof(sFONT *));
-    secPtrs = (const uint8_t **)malloc(sects * sizeof(const uint8_t *));
+    secPtrs = (const uint8_t ***)malloc(sects * sizeof(const uint8_t *));
 }
 
 Screen::~Screen() {
@@ -14,79 +16,174 @@ Screen::~Screen() {
             free((void *)secPtrs[i]);
         }
     }
-    free(secBases);
+    free(secCap);
+    free(secWidth);
+    free(secHeight);
     free(secPtrs);
     free(secFonts);
 }
 
-void Screen::AddSmallText(char *txt) {
-    AddText(0, txt);
+/* write the provided input into the destination (assume that the input is aligned left)  */
+inline void writebuf(unsigned char *input, unsigned char *dst, uint8_t startBit, uint8_t lengthBits) {
+    unsigned char byte = input[0];
+    // write non-aligned
+    uint8_t mask, rem, oft, index = startBit / 8;
+    oft = startBit % 8;
+    rem = 8-oft;
+    mask = ((1 << rem) - 1); // 0^oft||1^(rem)
+    // if whole thing fits in first byte
+    if(lengthBits+oft < 8) { 
+        rem = lengthBits;
+        mask = mask << 8-lengthBits-oft;
+    }
+    byte = (byte >> oft) & mask;
+    dst[index] |= byte;
+    index++;
+    // write aligned
+    uint8_t alignedBytes = (lengthBits - rem)/8;
+    int i;
+    for(i = 0; i < alignedBytes; i++) {\
+        // mask in case of arithmetic shift
+        byte = (input[i] << rem) | ((input[i+1] >> oft) & mask);
+        dst[index + i] = byte;
+    }
+    // write non-aligned
+    uint8_t lastSize = lengthBits - (8 * alignedBytes) - rem;
+    mask = ~((1 << (8 - lastSize)) - 1);
+    if(lastSize != 0) {
+        byte = ((input[i] << rem) | (input[i+1] >> oft)) & mask;
+        dst[index + alignedBytes] |= byte;
+    }
 }
 
+/* 
+Configures a section of the screen, giving it a fixed number of lines
+for the provided font size.
+## sections must be defined in order ## 
+*/
+int Screen::DefineSection(int section, int lines, sFONT *font) {
+    if(section < sects && section >= 0) {
+        secFonts[section] = font;
+        secHeight[section] = lines;
+        secCap[section] = section == 0 ? 
+            font->Height * lines : 
+            font->Height * lines + secCap[section - 1];
+        secWidth[section] = EPD_WIDTH / font->Width;
+        int charC = (secWidth[section])*lines;
+        secPtrs[section] = (const uint8_t **)malloc(charC * sizeof(void *));
+        return 0;
+    }
+    return 1;
+}
+
+/* Write text to the specified section, overwriting any previous text*/
 void Screen::AddText(int section, char *txt) {
-    const uint8_t *secData = secPtrs[section];
+    const uint8_t **secData = secPtrs[section];
+    int w = secWidth[section];
+    int h = secHeight[section];
+    sFONT *font = secFonts[section];
     bool nullTerm = false;
     unsigned int char_offset;
 #ifdef UNIT
     unsigned int factor = 12 * (7 / 8 + (7 % 8 ? 1 : 0));
 #else
-    unsigned int factor = smallFont->Height * (smallFont->Width / 8 + (smallFont->Width % 8 ? 1 : 0));
+    unsigned int factor = font->Height * (font->Width / 8 + (font->Width % 8 ? 1 : 0));
 #endif
-    for(int i = 0; i < 20; i++) {
-        for(int j = 0; j < 15; j++) {
+    for(int i = 0; i < h; i++) {
+        for(int j = 0; j < w; j++) {
+            int index = i * w + j;
             if(nullTerm) {
-                small[i][j] = nullptr;
+                secData[index] = nullptr;
                 continue;
             }
-            char c = txt[i * 15 + j];
+            char c = txt[i * w + j];
             if (c == '\0') {
                 nullTerm = true;
-                small[i][j] = nullptr;
+                secData[index] = nullptr;
                 continue;
             } else {
                 char_offset = (c - ' ') * factor;
 #ifdef UNIT
-                small[i][j] = (const uint8_t *)c;
+                secData[index] = (const uint8_t *)c;
 #else
-                small[i][j] = &smallFont->table[char_offset];
+                secData[index] = &font->table[char_offset];
 #endif
             }
         }
     }
 }
 
-unsigned char * Screen::GetLine(int x) {
-    unsigned char *line = (unsigned char*)calloc(16, 1);
-#ifndef UNIT
-    int ln = x / smallFont->Height;
-    int subln = x % smallFont->Height;
-#else
-    int ln = x / 12;
-    int subln = x % 12;
-#endif
-    line[0] = 0xFF;
-    for (int i = 0; i < 15; i++) {
-        if(ln >= 20) {
-            line[i+1] = 0xFF;
-        } else {
-            const uint8_t *frame = small[ln][i];
+/*
+Get a line from the indicated section; x is the line starting at base 0
+*/
+unsigned char *Screen::GetLineFromSection(int section, int x) {
+    // screen is exactly 15.25 bytes wide but screen expects to receive LINEBYTES bytes
+    unsigned char *line = (unsigned char *)calloc(LINEBYTES, 1);
+    sFONT *font = secFonts[section];
+    uint8_t subln = x % font->Height;
+    int ln = x / font->Height;
+
+    if(ln >= secHeight[section]) {
+        for(int i = 0; i < LINEBYTES; i++) 
+            line[i] = 0xFF;
+    } else {
+        uint8_t bytes = (font->Width / 8) + ((font->Width % 8) != 0);
+        const uint8_t **data = secPtrs[section];
+        line[0] = 0xFF; // avoid the cutoff
+        uint8_t wptr = 8;
+        unsigned char *cbyte = (unsigned char *)calloc(bytes,1);
+        for (uint8_t rptr = 0; rptr < secWidth[section]; rptr++)
+        {
+            const uint8_t *frame = data[ln * secWidth[section] + rptr];
 #ifdef UNIT
-            unsigned char cbyte = (char)frame;
+            cbyte[0] = (unsigned char)frame;
 #else
-            unsigned char cbyte = frame == nullptr ? 0xFF : ~pgm_read_byte(&frame[subln]);
+            for(uint8_t b = 0; b < bytes; b++) {
+                cbyte[b] = frame == nullptr ? 0xFF : ~pgm_read_byte(frame + bytes*subln + b);
+            }
 #endif
-            line[i+1] = cbyte;
+            writebuf(cbyte, line, wptr, font->Width);
+            wptr += font->Width;
         }
+        if(wptr < LINEBITS) {
+            for(ln = 0; ln < bytes; ln++)
+                cbyte[ln] = 0xFF;
+            writebuf(cbyte, line, wptr, LINEBITS-wptr);
+        }
+        free(cbyte);
     }
     return line;
 }
+
+/* get line x of the screen */
+unsigned char * Screen::GetLine(int x) {
+    for(int s = 0; s < sects; s++) {
+        if(x < secCap[s]) {
+            int oft = s == 0 ? x : x - secCap[s-1];
+            return GetLineFromSection(s, oft);
+        }
+    }
+    unsigned char *blank = (unsigned char *)malloc(LINEBYTES);
+    for(int i = 0; i < LINEBYTES; i++) {
+        blank[i] = 0xFF;
+    }
+    return blank;
+}
+
 #ifdef UNIT
 void Screen::Print() {
-    for(int i = 0; i < 20; i++) {
-        for(int j = 0; j < 15; j++) {
-            printf("%p ", small[i][j]);
+    const uint8_t **data;
+    for(int s = 0; s < sects; s++) {
+        printf("W %d H %d C %d\n", secWidth[s], secHeight[s], secCap[s]);
+        data = secPtrs[s];
+        int w = secWidth[s];
+        int h = secHeight[s];
+        for(int i = 0; i < h; i++) {
+            for(int j = 0; j < w; j++) {
+                printf("%p ", data[i * w + j]);
+            }
+            printf("\n");
         }
-        printf("\n");
     }
 }
 #endif
@@ -107,10 +204,44 @@ void getline_test(Screen *s)
     printf("\n");
     free(ln);
 }
+
+void betterbitmap_test() {
+    unsigned char *line = (unsigned char *)calloc(LINEBYTES,1);
+    uint8_t *in = (uint8_t *)calloc(4,1);
+    in[0] = 0x88;
+    writebuf(in, line, 1, 5);
+    in[0] = 0x84;
+    in[1] = 0x42;
+    in[2] = 0x21;
+    in[3] = 0xFF;
+    writebuf(in, line, LINEBYTES, 25);
+
+    printf("0x");
+    for(int i = 0; i < LINEBYTES; i++) {
+        printf("%x", line[i]);
+    }
+    printf("\n");
+    free(line);
+    free(in);
+}
+
 int main(int argc, char* argv[]) {
-    Screen s = Screen(nullptr);
-    s.AddSmallText(argv[1]);
-    s.Print();
+    sFONT Font8 = {
+        nullptr,
+        5,  /* Width */
+        8, /* Height */
+    };
+    Screen s = Screen(1);
+    s.DefineSection(0, 20, &Font8);
+    if(argc > 1) {
+        s.AddText(0, argv[1]);
+    } else {
+        s.AddText(0, argv[0]);
+    }
+    // s.Print();
+    // printf("%d\n", EPD_WIDTH / 7);
+    // partialwrite_test();
+    betterbitmap_test();
 }
 
 #endif

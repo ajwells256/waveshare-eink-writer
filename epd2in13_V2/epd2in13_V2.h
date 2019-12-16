@@ -36,10 +36,6 @@
 #include <string.h>
 #include "screen.h"
 
-// Display resolution
-#define EPD_WIDTH       122
-#define EPD_HEIGHT      250
-
 #define FULL			0
 #define PART			1
 

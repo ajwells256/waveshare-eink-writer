@@ -1,7 +1,13 @@
 #ifndef SCREEN_H
 #define SCREEN_H
 
-#define null 0;
+// Display resolution
+#define EPD_WIDTH 122
+#define EPD_HEIGHT 250
+
+#define LINEBYTES 16
+#define LINEBITS (LINEBYTES * 8)
+
 #include "fonts.h"
 
 // #define UNIT 0
@@ -12,6 +18,7 @@
 #endif
 #include <stdlib.h>
 
+
 class Screen {
     public:
         Screen(int sections);
@@ -19,16 +26,15 @@ class Screen {
         unsigned char *GetLine(int x);
         int DefineSection(int section, int lines, sFONT *font);
         void AddText(int section, char *txt);
-        void AddSmallText(char *txt);
         void Print();
 
     private:
-        const uint8_t **secPtrs;
+        const uint8_t ***secPtrs;
         sFONT **secFonts;
-        int *secBases;
+        int *secCap;
+        int *secWidth;
+        int *secHeight;
         int sects;
-        const uint8_t *small[20][15];
-        sFONT *smallFont = &Font12;
+        unsigned char *Screen::GetLineFromSection(int section, int x);
 };
-
 #endif
