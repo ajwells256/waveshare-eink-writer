@@ -89,16 +89,16 @@ void Screen::Print(int section, char *txt, int align=ALIGN_LEFT) {
             end++;
         if((end - start) == w || align == ALIGN_LEFT) {
             for (int i = 0; i < w; i++)
-                buffer[line * w + i] = i < end-start ? txt[start + i] : '_';
+                buffer[line * w + i] = i < end-start ? txt[start + i] : ' ';
         } else if(align == ALIGN_RIGHT) {
             int bc = w - end + start; //begin characters
             for(int i = 0; i < w; i++)
-                buffer[line*w + i] = i < bc ? '_' : txt[start + i - bc];
+                buffer[line*w + i] = i < bc ? ' ' : txt[start + i - bc];
         } else { // align = center
             int ws0 = (w - end + start) / 2; // whitespace 0
             int ws1 = ws0 + end - start;
             for(int i = 0; i < w; i++)
-                buffer[line * w + i] = i < ws0 || i >= ws1 ? '_' : txt[start + i - ws0];
+                buffer[line * w + i] = i < ws0 || i >= ws1 ? ' ' : txt[start + i - ws0];
         }
         if(txt[end] == '\n') {
             start = end+1;
@@ -269,11 +269,11 @@ int main(int argc, char* argv[]) {
         8, /* Height */
     };
     Screen s = Screen(2);
-    s.DefineSection(0, 3, &Font8);
-    s.DefineSection(1, 3, &Font8);
+    s.DefineSection(0, 1, &Font8);
+    s.DefineSection(1, 4, &Font8);
     if(argc > 1) {
         s.Print(0, argv[1], ALIGN_RIGHT);
-        s.Print(1, "hello\nworld", ALIGN_RIGHT);
+        s.Print(1, "\nonwards\n&\nupwards", ALIGN_CENTER);
     }
     else {
         s.AddText(0, argv[0]);
