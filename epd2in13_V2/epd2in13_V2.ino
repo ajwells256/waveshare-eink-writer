@@ -1,9 +1,8 @@
 #include <SPI.h>
-#include "epd2in13_V2.h"
+#include "screen.h"
 #include "fonts.h"
 #include <stdio.h>
 
-Epd epd;
 Screen *s;
 
 int buff[64];
@@ -14,7 +13,7 @@ void setup()
 {
     // put your setup code here, to run once:
     Serial.begin(9600);
-    if (epd.Init(FULL) != 0) {
+    if (s->EpdInit() != 0) {
         Serial.println("e-Paper init failed");
         return;
     }
@@ -22,7 +21,7 @@ void setup()
     s = new Screen(1);
     s->DefineSection(0, 15, &Font12);
     s->Print(0, "\n\n\n\n\n\n\n\n\nLoading...", ALIGN_CENTER);
-    epd.DisplayScreen(s);
+    s->Draw();
 }
 
 void loop()
@@ -45,11 +44,11 @@ void loop()
         i++;
       }
       if(strcmp(build, "clear") == 0) {
-        epd.Clear();
+        s->Clear();
       } else if(strcmp(build, "die") == 0) {
-        epd.Sleep();
+        s->Sleep();
       } else if(strcmp(build, "wake") == 0) {
-        epd.Reset();
+        s->Reset();
       } else {
         for(int i = 0; i < 64; i++) {
           if(build[i] == '\0')
@@ -60,7 +59,7 @@ void loop()
         for(int i = 0; i < 1; i++) {
           s->Print(i, build, ALIGN_CENTER);
         }
-        epd.DisplayScreen(s);
+        s->Draw();
       }
       Serial.println("Message Received ");
       rPtr++; // get past the trailing semicolon

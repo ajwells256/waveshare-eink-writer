@@ -1,5 +1,6 @@
 #include "screen.h"
 
+#pragma region Init
 
 Screen::Screen(int sectors) {
     sects = sectors;
@@ -18,6 +19,42 @@ Screen::~Screen() {
     }
     free(secPtrs);
     free(secDescs);
+}
+
+/* 
+Configures a section of the screen, giving it a fixed number of lines
+for the provided font size.
+## sections must be defined in order ## 
+*/
+int Screen::DefineSection(int section, int lines, sFONT *font)
+{
+    if (section < sects && section >= 0)
+    {
+        secDescs[section] = (struct Section *)malloc(sizeof(struct Section));
+        secDescs[section]->font = font;
+        secDescs[section]->height = lines;
+        secDescs[section]->cap = section == 0 ? font->Height * lines : font->Height * lines + secDescs[section - 1]->cap;
+        secDescs[section]->width = EPD_WIDTH / font->Width;
+        int charC = (secDescs[section]->width) * lines;
+        secPtrs[section] = (const uint8_t **)malloc(charC * sizeof(void *));
+        return 0;
+    }
+    return 1;
+}
+
+#pragma endregion
+
+#pragma region Utils
+
+inline unsigned char rev_byte(unsigned char c)
+{
+    unsigned char b = 0;
+    for (int i = 0; i < 8; i++)
+    {
+        b = b << 1;
+        b |= (c >> i) & 0x1;
+    }
+    return b;
 }
 
 /* write the provided input into the destination (assume that the input is aligned left)  */
@@ -53,27 +90,9 @@ inline void writebuf(unsigned char *input, unsigned char *dst, uint8_t startBit,
     }
 }
 
-/* 
-Configures a section of the screen, giving it a fixed number of lines
-for the provided font size.
-## sections must be defined in order ## 
-*/
-int Screen::DefineSection(int section, int lines, sFONT *font) {
-    if(section < sects && section >= 0) {
-        secDescs[section] = (struct Section*)malloc(sizeof(struct Section));
-        secDescs[section]->font = font;
-        secDescs[section]->height = lines;
-        secDescs[section]->cap = section == 0 ? 
-            font->Height * lines : 
-            font->Height * lines + secDescs[section - 1]->cap;
-        secDescs[section]->width = EPD_WIDTH / font->Width;
-        int charC = (secDescs[section]->width)*lines;
-        secPtrs[section] = (const uint8_t **)malloc(charC * sizeof(void *));
-        return 0;
-    }
-    return 1;
-}
+#pragma endregion
 
+#pragma region Input
 /* print txt to the next line in the specified section. Performs any requested formatting
  -- txt should not include any unprintable characters except newline and null termination*/
 void Screen::Print(int section, char *txt, int align=ALIGN_LEFT) {
@@ -148,6 +167,10 @@ void Screen::AddText(int section, char *txt) {
     }
 }
 
+#pragma endregion
+
+#pragma region Output
+
 /*
 Get a line from the indicated section; x is the line starting at base 0
 */
@@ -204,6 +227,194 @@ unsigned char * Screen::GetLine(int x) {
     }
     return blank;
 }
+#pragma endregion
+
+#pragma region EpdUtils
+
+/**
+ *  @brief: basic function for sending commands
+ */
+void Screen::SendCommand(unsigned char command)
+{
+    DigitalWrite(DC_PIN, LOW);
+    SpiTransfer(command);
+}
+
+/**
+ *  @brief: basic function for sending data
+ */
+void Screen::SendData(unsigned char data)
+{
+    DigitalWrite(DC_PIN, HIGH);
+    SpiTransfer(data);
+}
+
+/**
+ *  @brief: Wait until the BUSY_PIN goes HIGH
+ */
+void Screen::WaitUntilIdle(void)
+{
+    while (DigitalRead(BUSY_PIN) == 1)
+    { //LOW: idle, HIGH: busy
+        DelayMs(100);
+    }
+    DelayMs(200);
+}
+
+int Screen::EpdInit()
+{
+    /* this calls the peripheral hardware interface, see epdif */
+    if (IfInit() != 0)
+    {
+        return -1;
+    }
+
+    Reset();
+
+    int count;
+
+    WaitUntilIdle();
+    SendCommand(0x12); // soft reset
+    WaitUntilIdle();
+
+    SendCommand(0x74); //set analog block control
+    SendData(0x54);
+    SendCommand(0x7E); //set digital block control
+    SendData(0x3B);
+
+    SendCommand(0x01); //Driver output control
+    SendData(0xF9);
+    SendData(0x00);
+    SendData(0x00);
+
+    SendCommand(0x11); //data entry mode
+    SendData(0x01);
+
+    SendCommand(0x44); //set Ram-X address start/end position
+    SendData(0x00);
+    SendData(0x0F); //0x0C-->(15+1)*8=128
+
+    SendCommand(0x45); //set Ram-Y address start/end position
+    SendData(0xF9);    //0xF9-->(249+1)=250
+    SendData(0x00);
+    SendData(0x00);
+    SendData(0x00);
+
+    SendCommand(0x3C); //BorderWavefrom
+    SendData(0x03);
+
+    SendCommand(0x2C); //VCOM Voltage
+    SendData(0x55);    //
+
+    SendCommand(0x03);
+    SendData(lut_full_update[70]);
+
+    SendCommand(0x04); //
+    SendData(lut_full_update[71]);
+    SendData(lut_full_update[72]);
+    SendData(lut_full_update[73]);
+
+    SendCommand(0x3A); //Dummy Line
+    SendData(lut_full_update[74]);
+    SendCommand(0x3B); //Gate time
+    SendData(lut_full_update[75]);
+
+    SendCommand(0x32);
+    for (count = 0; count < 70; count++)
+    {
+        SendData(lut_full_update[count]);
+    }
+
+    SendCommand(0x4E); // set RAM x address count to 0;
+    SendData(0x00);
+    SendCommand(0x4F); // set RAM y address count to 0X127;
+    SendData(0xF9);
+    SendData(0x00);
+    WaitUntilIdle();
+
+    return 0;
+}
+
+/**
+ *  @brief: module reset.
+ *          often used to awaken the module in deep sleep,
+ *          see Epd::Sleep();
+ */
+void Screen::Reset(void)
+{
+    DigitalWrite(RST_PIN, HIGH);
+    DelayMs(200);
+    DigitalWrite(RST_PIN, LOW); //module reset
+    DelayMs(10);
+    DigitalWrite(RST_PIN, HIGH);
+    DelayMs(200);
+}
+
+void Screen::Clear()
+{
+    int w, h;
+    w = (EPD_WIDTH % 8 == 0) ? (EPD_WIDTH / 8) : (EPD_WIDTH / 8 + 1);
+    h = EPD_HEIGHT;
+    SendCommand(0x24);
+    for (int j = 0; j < h; j++)
+    {
+        for (int i = 0; i < w; i++)
+        {
+            SendData(0xFF);
+        }
+    }
+
+    //DISPLAY REFRESH
+    SendCommand(0x22);
+    SendData(0xC7);
+    SendCommand(0x20);
+    WaitUntilIdle();
+}
+
+/**
+ *  @brief: After this command is transmitted, the chip would enter the
+ *          deep-sleep mode to save power.
+ *          The deep sleep mode would return to standby by hardware reset.
+ *          The only one parameter is a check code, the command would be
+ *          executed if check code = 0xA5.
+ *          You can use Epd::Init() to awaken
+ */
+void Screen::Sleep()
+{
+    SendCommand(0x22); //POWER OFF
+    SendData(0xC3);
+    SendCommand(0x20);
+
+    SendCommand(0x10); //enter deep sleep
+    SendData(0x01);
+    DelayMs(200);
+
+    DigitalWrite(RST_PIN, LOW);
+}
+
+void Screen::Draw()
+{
+    SendCommand(0x24);
+    for (int line = 0; line < EPD_HEIGHT; line++)
+    {
+        unsigned char *l = GetLine(line);
+        for (int h = 15; h >= 0; h--)
+        {
+            SendData(rev_byte(l[h]));
+        }
+        free(l);
+    }
+
+    //DISPLAY REFRESH
+    SendCommand(0x22);
+    SendData(0xC7);
+    SendCommand(0x20);
+    WaitUntilIdle();
+}
+
+#pragma endregion
+
+#pragma region UnitTesting
 
 #ifdef UNIT
 void Screen::Print() {
@@ -283,3 +494,5 @@ int main(int argc, char* argv[]) {
 }
 
 #endif
+
+#pragma endregion
