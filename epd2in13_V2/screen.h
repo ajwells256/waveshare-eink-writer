@@ -8,6 +8,10 @@
 #define LINEBYTES 16
 #define LINEBITS (LINEBYTES * 8)
 
+#define ALIGN_LEFT 0
+#define ALIGN_CENTER 1
+#define ALIGN_RIGHT 2
+
 #include "fonts.h"
 
 // #define UNIT 0
@@ -26,6 +30,7 @@ class Screen {
         unsigned char *GetLine(int x);
         int DefineSection(int section, int lines, sFONT *font);
         void AddText(int section, char *txt);
+        void Print(int section, char *txt, int align=ALIGN_LEFT);
         void Print();
 
     private:

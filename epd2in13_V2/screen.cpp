@@ -76,6 +76,47 @@ int Screen::DefineSection(int section, int lines, sFONT *font) {
     return 1;
 }
 
+/* print txt to the next line in the specified section. Performs any requested formatting
+ -- txt should not include any unprintable characters except newline and null termination*/
+void Screen::Print(int section, char *txt, int align=ALIGN_LEFT) {
+    int w = secWidth[section];
+    int h = secHeight[section];
+    char *buffer = (char *)malloc((w * h * sizeof(char)) + 1);
+    int start = 0; int end = 0;
+    for(int line = 0; line < h; line++) {
+        // get next line
+        while(txt[end] != '\0' && txt[end] != '\n' && end - start != w)
+            end++;
+        if((end - start) == w || align == ALIGN_LEFT) {
+            for (int i = 0; i < w; i++)
+                buffer[line * w + i] = i < end-start ? txt[start + i] : '_';
+        } else if(align == ALIGN_RIGHT) {
+            int bc = w - end + start; //begin characters
+            for(int i = 0; i < w; i++)
+                buffer[line*w + i] = i < bc ? '_' : txt[start + i - bc];
+        } else { // align = center
+            int ws0 = (w - end + start) / 2; // whitespace 0
+            int ws1 = ws0 + end - start;
+            for(int i = 0; i < w; i++)
+                buffer[line * w + i] = i < ws0 || i >= ws1 ? '_' : txt[start + i - ws0];
+        }
+        if(txt[end] == '\n') {
+            start = end+1;
+            end = start;
+        }
+        else if(txt[end] == '\0') {
+            buffer[(line+1) * w] = '\0';
+            break;
+        } else {
+            start = end;
+            end = start;
+        }
+    }
+
+    AddText(section, buffer);
+    free(buffer);
+}
+
 /* Write text to the specified section, overwriting any previous text*/
 void Screen::AddText(int section, char *txt) {
     const uint8_t **secData = secPtrs[section];
@@ -84,11 +125,7 @@ void Screen::AddText(int section, char *txt) {
     sFONT *font = secFonts[section];
     bool nullTerm = false;
     unsigned int char_offset;
-#ifdef UNIT
-    unsigned int factor = 12 * (7 / 8 + (7 % 8 ? 1 : 0));
-#else
     unsigned int factor = font->Height * (font->Width / 8 + (font->Width % 8 ? 1 : 0));
-#endif
     for(int i = 0; i < h; i++) {
         for(int j = 0; j < w; j++) {
             int index = i * w + j;
@@ -180,7 +217,7 @@ void Screen::Print() {
         int h = secHeight[s];
         for(int i = 0; i < h; i++) {
             for(int j = 0; j < w; j++) {
-                printf("%p ", data[i * w + j]);
+                printf("%c ", (char)data[i * w + j]);
             }
             printf("\n");
         }
@@ -231,17 +268,20 @@ int main(int argc, char* argv[]) {
         5,  /* Width */
         8, /* Height */
     };
-    Screen s = Screen(1);
-    s.DefineSection(0, 20, &Font8);
+    Screen s = Screen(2);
+    s.DefineSection(0, 3, &Font8);
+    s.DefineSection(1, 3, &Font8);
     if(argc > 1) {
-        s.AddText(0, argv[1]);
-    } else {
+        s.Print(0, argv[1], ALIGN_RIGHT);
+        s.Print(1, "hello\nworld", ALIGN_RIGHT);
+    }
+    else {
         s.AddText(0, argv[0]);
     }
-    // s.Print();
+    s.Print();
     // printf("%d\n", EPD_WIDTH / 7);
     // partialwrite_test();
-    betterbitmap_test();
+    // betterbitmap_test();
 }
 
 #endif
