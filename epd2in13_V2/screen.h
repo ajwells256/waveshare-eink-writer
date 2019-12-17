@@ -15,13 +15,26 @@
 #include "fonts.h"
 
 // #define UNIT 0
+// #define FEATURE_TOGGLE 0
+
 #ifdef UNIT
 #include <stdio.h>
 #else
+#ifdef FEATURE_TOGGLE 
+#include <SPI.h>
+#include "epdif.h"
+#endif
 #include <avr/pgmspace.h>
+
 #endif
 #include <stdlib.h>
 
+struct Section {
+    sFONT *font;
+    int cap;
+    int width;
+    int height;
+};
 
 class Screen {
     public:
@@ -35,10 +48,7 @@ class Screen {
 
     private:
         const uint8_t ***secPtrs;
-        sFONT **secFonts;
-        int *secCap;
-        int *secWidth;
-        int *secHeight;
+        struct Section **secDescs;
         int sects;
         unsigned char *Screen::GetLineFromSection(int section, int x);
 };

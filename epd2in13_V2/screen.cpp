@@ -3,24 +3,21 @@
 
 Screen::Screen(int sectors) {
     sects = sectors;
-    secCap = (int *)malloc(sects * sizeof(int));
-    secWidth = (int *)malloc(sects * sizeof(int));
-    secHeight = (int *)malloc(sects * sizeof(int));
-    secFonts = (sFONT **)malloc(sects * sizeof(sFONT *));
+    secDescs = (struct Section **)calloc(sects, sizeof(struct Section *));
     secPtrs = (const uint8_t ***)malloc(sects * sizeof(const uint8_t *));
 }
 
 Screen::~Screen() {
     for(int i = 0; i < sects; i++) {
-        if(&secPtrs[i] != nullptr) {
+        if(secPtrs[i] != nullptr) {
             free((void *)secPtrs[i]);
         }
+        if(secDescs[i] != nullptr) {
+            free(secDescs[i]);
+        }
     }
-    free(secCap);
-    free(secWidth);
-    free(secHeight);
     free(secPtrs);
-    free(secFonts);
+    free(secDescs);
 }
 
 /* write the provided input into the destination (assume that the input is aligned left)  */
@@ -63,13 +60,14 @@ for the provided font size.
 */
 int Screen::DefineSection(int section, int lines, sFONT *font) {
     if(section < sects && section >= 0) {
-        secFonts[section] = font;
-        secHeight[section] = lines;
-        secCap[section] = section == 0 ? 
+        secDescs[section] = (struct Section*)malloc(sizeof(struct Section));
+        secDescs[section]->font = font;
+        secDescs[section]->height = lines;
+        secDescs[section]->cap = section == 0 ? 
             font->Height * lines : 
-            font->Height * lines + secCap[section - 1];
-        secWidth[section] = EPD_WIDTH / font->Width;
-        int charC = (secWidth[section])*lines;
+            font->Height * lines + secDescs[section - 1]->cap;
+        secDescs[section]->width = EPD_WIDTH / font->Width;
+        int charC = (secDescs[section]->width)*lines;
         secPtrs[section] = (const uint8_t **)malloc(charC * sizeof(void *));
         return 0;
     }
@@ -79,8 +77,8 @@ int Screen::DefineSection(int section, int lines, sFONT *font) {
 /* print txt to the next line in the specified section. Performs any requested formatting
  -- txt should not include any unprintable characters except newline and null termination*/
 void Screen::Print(int section, char *txt, int align=ALIGN_LEFT) {
-    int w = secWidth[section];
-    int h = secHeight[section];
+    int w = secDescs[section]->width;
+    int h = secDescs[section]->height;
     char *buffer = (char *)malloc((w * h * sizeof(char)) + 1);
     int start = 0; int end = 0;
     for(int line = 0; line < h; line++) {
@@ -120,9 +118,9 @@ void Screen::Print(int section, char *txt, int align=ALIGN_LEFT) {
 /* Write text to the specified section, overwriting any previous text*/
 void Screen::AddText(int section, char *txt) {
     const uint8_t **secData = secPtrs[section];
-    int w = secWidth[section];
-    int h = secHeight[section];
-    sFONT *font = secFonts[section];
+    int w = secDescs[section]->width;
+    int h = secDescs[section]->height;
+    sFONT *font = secDescs[section]->font;
     bool nullTerm = false;
     unsigned int char_offset;
     unsigned int factor = font->Height * (font->Width / 8 + (font->Width % 8 ? 1 : 0));
@@ -156,11 +154,11 @@ Get a line from the indicated section; x is the line starting at base 0
 unsigned char *Screen::GetLineFromSection(int section, int x) {
     // screen is exactly 15.25 bytes wide but screen expects to receive LINEBYTES bytes
     unsigned char *line = (unsigned char *)calloc(LINEBYTES, 1);
-    sFONT *font = secFonts[section];
+    sFONT *font = secDescs[section]->font;
     uint8_t subln = x % font->Height;
     int ln = x / font->Height;
 
-    if(ln >= secHeight[section]) {
+    if(ln >= secDescs[section]->height) {
         for(int i = 0; i < LINEBYTES; i++) 
             line[i] = 0xFF;
     } else {
@@ -169,9 +167,9 @@ unsigned char *Screen::GetLineFromSection(int section, int x) {
         line[0] = 0xFF; // avoid the cutoff
         uint8_t wptr = 8;
         unsigned char *cbyte = (unsigned char *)calloc(bytes,1);
-        for (uint8_t rptr = 0; rptr < secWidth[section]; rptr++)
+        for (uint8_t rptr = 0; rptr < secDescs[section]->width; rptr++)
         {
-            const uint8_t *frame = data[ln * secWidth[section] + rptr];
+            const uint8_t *frame = data[ln * secDescs[section]->width + rptr];
 #ifdef UNIT
             cbyte[0] = (unsigned char)frame;
 #else
@@ -195,8 +193,8 @@ unsigned char *Screen::GetLineFromSection(int section, int x) {
 /* get line x of the screen */
 unsigned char * Screen::GetLine(int x) {
     for(int s = 0; s < sects; s++) {
-        if(x < secCap[s]) {
-            int oft = s == 0 ? x : x - secCap[s-1];
+        if(x < secDescs[s]->cap) {
+            int oft = s == 0 ? x : x - secDescs[s-1]->cap;
             return GetLineFromSection(s, oft);
         }
     }
@@ -211,10 +209,10 @@ unsigned char * Screen::GetLine(int x) {
 void Screen::Print() {
     const uint8_t **data;
     for(int s = 0; s < sects; s++) {
-        printf("W %d H %d C %d\n", secWidth[s], secHeight[s], secCap[s]);
+        printf("W %d H %d C %d\n", secDescs[s]->width, secDescs[s]->height, secDescs[s]->cap);
         data = secPtrs[s];
-        int w = secWidth[s];
-        int h = secHeight[s];
+        int w = secDescs[s]->width;
+        int h = secDescs[s]->height;
         for(int i = 0; i < h; i++) {
             for(int j = 0; j < w; j++) {
                 printf("%c ", (char)data[i * w + j]);
