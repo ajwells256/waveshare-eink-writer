@@ -2,23 +2,46 @@
 
 #pragma region Init
 
-Screen::Screen(int sectors) {
+Screen::Screen() {
+#ifndef UNIT
+    EpdInit();
+#endif
+    sects = 0;
+    secPtrs = nullptr;
+    
+    ScreenInit(1);
+    DefineSection(0, 15, &Font12);
+    Print(0, "\n\n\n\n\n\n\n\n\nLoading...", ALIGN_CENTER);
+#ifndef UNIT
+    Draw();
+#endif
+}
+
+Screen::~Screen() {
+    TearDown();
+}
+
+void Screen::ScreenInit(int sectors) {
+    TearDown();
+
     sects = sectors;
     secDescs = (struct Section **)calloc(sects, sizeof(struct Section *));
     secPtrs = (const uint8_t ***)malloc(sects * sizeof(const uint8_t *));
 }
 
-Screen::~Screen() {
-    for(int i = 0; i < sects; i++) {
-        if(secPtrs[i] != nullptr) {
-            free((void *)secPtrs[i]);
+void Screen::TearDown() {
+    if(secPtrs != nullptr) {
+        for(int i = 0; i < sects; i++) {
+            if(secPtrs[i] != nullptr) {
+                free((void *)secPtrs[i]);
+            }
+            if(secDescs[i] != nullptr) {
+                free(secDescs[i]);
+            }
         }
-        if(secDescs[i] != nullptr) {
-            free(secDescs[i]);
-        }
+        free(secPtrs);
+        free(secDescs);
     }
-    free(secPtrs);
-    free(secDescs);
 }
 
 /* 
@@ -230,13 +253,20 @@ unsigned char * Screen::GetLine(int x) {
 #pragma endregion
 
 #pragma region EpdUtils
+#ifndef UNIT
+void Screen::SpiTransfer(unsigned char data) {
+    digitalWrite(CS_PIN, LOW);
+    SPI.transfer(data);
+    digitalWrite(CS_PIN, HIGH);
+}
+
 
 /**
  *  @brief: basic function for sending commands
  */
 void Screen::SendCommand(unsigned char command)
 {
-    DigitalWrite(DC_PIN, LOW);
+    digitalWrite(DC_PIN, LOW);
     SpiTransfer(command);
 }
 
@@ -245,7 +275,7 @@ void Screen::SendCommand(unsigned char command)
  */
 void Screen::SendData(unsigned char data)
 {
-    DigitalWrite(DC_PIN, HIGH);
+    digitalWrite(DC_PIN, HIGH);
     SpiTransfer(data);
 }
 
@@ -254,20 +284,23 @@ void Screen::SendData(unsigned char data)
  */
 void Screen::WaitUntilIdle(void)
 {
-    while (DigitalRead(BUSY_PIN) == 1)
+    while (digitalRead(BUSY_PIN) == 1)
     { //LOW: idle, HIGH: busy
-        DelayMs(100);
+        delay(100);
     }
-    DelayMs(200);
+    delay(200);
 }
 
 int Screen::EpdInit()
 {
     /* this calls the peripheral hardware interface, see epdif */
-    if (IfInit() != 0)
-    {
-        return -1;
-    }
+    pinMode(CS_PIN, OUTPUT);
+    pinMode(RST_PIN, OUTPUT);
+    pinMode(DC_PIN, OUTPUT);
+    pinMode(BUSY_PIN, INPUT);
+
+    SPI.begin();
+    SPI.beginTransaction(SPISettings(2000000, MSBFIRST, SPI_MODE0));
 
     Reset();
 
@@ -342,12 +375,12 @@ int Screen::EpdInit()
  */
 void Screen::Reset(void)
 {
-    DigitalWrite(RST_PIN, HIGH);
-    DelayMs(200);
-    DigitalWrite(RST_PIN, LOW); //module reset
-    DelayMs(10);
-    DigitalWrite(RST_PIN, HIGH);
-    DelayMs(200);
+    digitalWrite(RST_PIN, HIGH);
+    delay(200);
+    digitalWrite(RST_PIN, LOW); //module reset
+    delay(10);
+    digitalWrite(RST_PIN, HIGH);
+    delay(200);
 }
 
 void Screen::Clear()
@@ -387,11 +420,10 @@ void Screen::Sleep()
 
     SendCommand(0x10); //enter deep sleep
     SendData(0x01);
-    DelayMs(200);
+    delay(200);
 
-    DigitalWrite(RST_PIN, LOW);
+    digitalWrite(RST_PIN, LOW);
 }
-
 void Screen::Draw()
 {
     SendCommand(0x24);
@@ -411,6 +443,7 @@ void Screen::Draw()
     SendCommand(0x20);
     WaitUntilIdle();
 }
+#endif
 
 #pragma endregion
 
@@ -432,9 +465,7 @@ void Screen::Print() {
         }
     }
 }
-#endif
 
-#ifdef UNIT
 void printarray_test(Screen *s)
 {
     s->Print();
@@ -471,13 +502,21 @@ void betterbitmap_test() {
     free(in);
 }
 
+sFONT Font8 = {
+    nullptr,
+    5, /* Width */
+    8, /* Height */
+};
+sFONT Font12 = {
+    nullptr,
+    7, /* Width */
+    12, /* Height */
+};
+
 int main(int argc, char* argv[]) {
-    sFONT Font8 = {
-        nullptr,
-        5,  /* Width */
-        8, /* Height */
-    };
-    Screen s = Screen(2);
+
+    Screen s = Screen();
+    s.ScreenInit(2);
     s.DefineSection(0, 1, &Font8);
     s.DefineSection(1, 4, &Font8);
     if(argc > 1) {

@@ -1,10 +1,16 @@
 #ifndef SCREEN_H
 #define SCREEN_H
 
-// Display resolution
+// EPD defines
 #define EPD_WIDTH 122
 #define EPD_HEIGHT 250
 
+#define RST_PIN 8
+#define DC_PIN 9
+#define CS_PIN 10
+#define BUSY_PIN 7
+
+// Screen Defines
 #define LINEBYTES 16
 #define LINEBITS (LINEBYTES * 8)
 
@@ -15,17 +21,12 @@
 #include "fonts.h"
 
 // #define UNIT 0
-#define FEATURE_TOGGLE 0
 
 #ifdef UNIT
 #include <stdio.h>
 #else
 
-#ifdef FEATURE_TOGGLE 
 #include <SPI.h>
-#include "epdif.h"
-#endif
-
 #include <avr/pgmspace.h>
 
 #endif
@@ -56,10 +57,11 @@ struct Section {
     int height;
 };
 
-class Screen : EpdIf {
+class Screen {
     public:
-        Screen(int sections);
+        Screen();
         ~Screen();
+        void ScreenInit(int sectors);
         unsigned char *GetLine(int x);
         int DefineSection(int section, int lines, sFONT *font);
         void AddText(int section, char *txt);
@@ -70,16 +72,18 @@ class Screen : EpdIf {
         void Clear();
         void Sleep();
         void Draw();
-        int EpdInit();
 
     private:
         const uint8_t ***secPtrs;
         struct Section **secDescs;
         int sects;
         unsigned char *GetLineFromSection(int section, int x);
-        // Epd 
+        // Epd
+        int EpdInit();
+        void SpiTransfer(unsigned char data);
         void SendCommand(unsigned char command);
         void SendData(unsigned char data);
         void WaitUntilIdle();
+        void TearDown();
 };
 #endif
