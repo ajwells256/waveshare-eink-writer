@@ -18,18 +18,17 @@
 #define ALIGN_CENTER 1
 #define ALIGN_RIGHT 2
 
-#include "fonts.h"
 
 // #define UNIT 0
 
 #ifdef UNIT
 #include <stdio.h>
 #else
-
+#include "Arduino.h"
 #include <SPI.h>
 #include <avr/pgmspace.h>
-
 #endif
+#include "fonts.h"
 #include <stdlib.h>
 
 const unsigned char lut_full_update[]= {
@@ -77,6 +76,7 @@ class Screen {
         const uint8_t ***secPtrs;
         struct Section **secDescs;
         int sects;
+        bool epdInit = false;
         unsigned char *GetLineFromSection(int section, int x);
         // Epd
         int EpdInit();

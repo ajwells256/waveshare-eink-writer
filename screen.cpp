@@ -2,27 +2,21 @@
 
 #pragma region Init
 
-Screen::Screen() {
-#ifndef UNIT
-    EpdInit();
-#endif
-    sects = 0;
-    secPtrs = nullptr;
-    
-    ScreenInit(1);
-    DefineSection(0, 15, &Font12);
-    Print(0, "\n\n\n\n\n\n\n\n\nLoading...", ALIGN_CENTER);
-#ifndef UNIT
-    Draw();
-#endif
-}
+Screen::Screen() { }
 
 Screen::~Screen() {
     TearDown();
 }
 
 void Screen::ScreenInit(int sectors) {
-    TearDown();
+    if (!epdInit) {
+#ifndef UNIT
+        EpdInit();
+#endif
+        epdInit = true;
+    } else {
+        TearDown();
+    }
 
     sects = sectors;
     secDescs = (struct Section **)calloc(sects, sizeof(struct Section *));
@@ -49,10 +43,8 @@ Configures a section of the screen, giving it a fixed number of lines
 for the provided font size.
 ## sections must be defined in order ## 
 */
-int Screen::DefineSection(int section, int lines, sFONT *font)
-{
-    if (section < sects && section >= 0)
-    {
+int Screen::DefineSection(int section, int lines, sFONT *font) {
+    if (section < sects && section >= 0) {
         secDescs[section] = (struct Section *)malloc(sizeof(struct Section));
         secDescs[section]->font = font;
         secDescs[section]->height = lines;
@@ -69,8 +61,7 @@ int Screen::DefineSection(int section, int lines, sFONT *font)
 
 #pragma region Utils
 
-inline unsigned char rev_byte(unsigned char c)
-{
+inline unsigned char rev_byte(unsigned char c) {
     unsigned char b = 0;
     for (int i = 0; i < 8; i++)
     {

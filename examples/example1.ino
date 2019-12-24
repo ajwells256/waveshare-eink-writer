@@ -3,7 +3,7 @@
 #include "fonts.h"
 #include <stdio.h>
 
-Screen *s;
+Screen s;
 
 int buff[64];
 int rPtr = 0;
@@ -13,14 +13,13 @@ void setup()
 {
     // put your setup code here, to run once:
     Serial.begin(9600);
-    
-    s = new Screen();
-    s->ScreenInit(5);
-    s->DefineSection(0, 2, &Font8);
-    s->DefineSection(1, 2, &Font12);
-    s->DefineSection(2, 2, &Font16);
-    s->DefineSection(3, 2, &Font20);
-    s->DefineSection(4, 2, &Font24);
+
+    s.ScreenInit(5);
+    s.DefineSection(0, 2, &Font8);
+    s.DefineSection(1, 2, &Font12);
+    s.DefineSection(2, 2, &Font16);
+    s.DefineSection(3, 2, &Font20);
+    s.DefineSection(4, 2, &Font24);
 }
 
 void loop()
@@ -43,11 +42,11 @@ void loop()
         i++;
       }
       if(strcmp(build, "clear") == 0) {
-        s->Clear();
+        s.Clear();
       } else if(strcmp(build, "die") == 0) {
-        s->Sleep();
+        s.Sleep();
       } else if(strcmp(build, "wake") == 0) {
-        s->Reset();
+        s.Reset();
       } else {
         for(int i = 0; i < 64; i++) {
           if(build[i] == '\0')
@@ -56,9 +55,9 @@ void loop()
             build[i] = '\n';
         }
         for(int i = 0; i < 5; i++) {
-          s->Print(i, build, ALIGN_CENTER);
+          s.Print(i, build, ALIGN_CENTER);
         }
-        s->Draw();
+        s.Draw();
       }
       Serial.println("Message Received ");
       rPtr++; // get past the trailing semicolon
